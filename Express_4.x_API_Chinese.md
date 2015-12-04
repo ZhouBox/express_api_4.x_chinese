@@ -1634,7 +1634,218 @@ router.all('/api/*', requireAuthentication);
 ####router.METHOD(path, [callback, ...] callback)
 `router.METHOD()`方法提供了路由方法在`Express`中，这里的`METHOD`是HTTP方法中的一个，比如GET，PUT，POST等等，单router中的METHOD是小写的。所以，实际的方法是`router.get()`，`router.put()`，`router.post()`等等。
 你可以提供多个回调函数，它们的行为和中间件一样，除了这些回调可以通过调用`next('router')`来绕过剩余的路由回调。你可以使用这个机制来为一个路由设置一些前提条件，如果请求没有满足当前路由的处理条件，那么传递控制到随后的路由。
-下面的片段可能说明了最简单的路由定义。Experss转换path字符串为正则表达式，用于内部匹配传入的请求。
+下面的片段可能说明了最简单的路由定义。Experss转换path字符串为正则表达式，用于内部匹配传入的请求。在匹配的时候，是不考虑`Query strings`，例如，"GET /"将匹配下面的路由，"GET /?name=tobi"也是一样的。
+```js
+router.get('/', function(req, res) {
+    res.send('Hello World');
+});
+```
+
+如果你对匹配的path有特殊的限制，你可以使用正则表达式，例如，下面的可以匹配"GET /commits/71dbb9c"和"GET /commits/71bb92..4c084f9"。
+```js
+router.get(/^\/commits\/(\w+)(?:\.\.(\w+))?$/, function(req, res) {
+    var from = req.params[0];
+    var to = req.params[1];
+    res.send('commit range ' + from + '..' + to);
+});
+```
+
+####router.param(name, callback)
+给路由参数添加回调触发器，这里的`name`是参数名，`function`是回调方法。回调方法的参数按序是请求对象，响应对象，下个中间件，参数值和参数名。虽然`name`在技术上是可选的，但是自Express V4.11.0之后版本不推荐使用(见下面)。
+> 不像`app.param()`，`router.param()`不接受一个数组作为路由参数。
+
+例如，当`:user`出现在路由路径中，你可以映射用户加载的逻辑处理来自动提供`req.user`给这个路由，或者对输入的参数进行验证。
+```js
+    router.param('user', function(req, res, next, id) {
+        User.find(id, function(error, user) {
+            if (err) {
+                next(err);
+            }
+            else if (user){
+                req.user = user;
+            } else {
+                next(new Error('failed to load user'));
+            }
+        });
+    });
+```
+对于`Param`的回调定义的路由来说，他们是局部的。它们不会被挂载的app或者路由继承。所以，定义在`router`上的`param`回调只有是在`router`上的路由具有这个路由参数时才起作用。
+在定义`param`的路由上，`param`回调都是第一个被调用的，它们在一个请求-响应循环中都会被调用一次并且只有一次，即使多个路由都匹配，如下面的例子：
+```js
+router.param('id', function(req, res, next, id) {
+    console.log('CALLED ONLY ONCE');
+    next();
+});
+
+router.get('/user/:id', function(req, res, next) {
+    console.log('although this matches');
+    next();
+});
+
+router.get('/user/:id', function(req, res) {
+    console.log('and this mathces too');
+    res.end();
+});
+```
+当`GET /user/42`，得到下面的结果:
+```log
+    CALLED ONLY ONCE
+    although this matches
+    and this matches too
+```
+`
+
+>下面章节描述的`router.param(callback)`在v4.11.0之后被弃用。
+
+通过只传递一个回调参数给`router.param(name, callback)`方法，`router.param(naem, callback)`方法的行为将被完全改变。这个回调参数是关于`router.param(name, callback)`该具有怎样的行为的一个自定义方法，这个方法必须接受两个参数并且返回一个中间件。
+这个回调的第一个参数就是需要捕获的url的参数名，第二个参数可以是任一的JavaScript对象，其可能在实现返回一个中间件时被使用。
+这个回调方法返回的中间件决定了当URL中包含这个参数时所采取的行为。
+在下面的例子中，`router.param(name, callback)`参数签名被修改成了`router.param(name, accessId)`。替换接受一个参数名和回调，`router.param()`现在接受一个参数名和一个数字。
+```js
+    var express = require('express');
+    var app = express();
+    var router = express.Router();
+    
+    router.param(function(param, option){
+        return function(req, res, next, val) {
+            if (val == option) {
+                next();
+            }
+            else {
+                res.sendStatus(403);
+            }
+        }
+    });
+    
+    router.param('id', 1337);
+    
+    router.get('/user/:id', function(req, res) {
+        res.send('Ok');
+    });
+    
+    app.use(router);
+    
+    app.listen(3000, function() {
+        console.log('Ready');
+    }); 
+```
+在这个例子中，`router.param(name. callback)`参数签名保持和原来一样，但是替换成了一个中间件，定义了一个自定义的数据类型检测方法来检测`user id`的类型正确性。
+```js
+    router.param(function(param, validator) {
+        return function(req, res, next, val) {
+            if (validator(val)) {
+                next();
+            }
+            else {
+                res.sendStatus(403);
+            }
+        }
+    });
+    
+    router.param('id', function(candidate) {
+        return !isNaN(parseFloat(candidate)) && isFinite(candidate);
+    });
+```
+####router.route(path)
+返回一个单例模式的路由的实例，之后你可以在其上施加各种HTTP动作的中间件。使用`app.route()`来避免重复路由名字(因此错字错误)--后面这句不知道说的什么鬼。
+构建在上面的`router.param()`例子之上，下面的代码展示了怎么使用`router.route()`来指定各种HTTP方法的处理句柄。
+```js
+var router = express.Router();
+
+router.param('user_id', function(req, res, next, id) {
+    // sample user, would actually fetch from DB, etc...
+    req.user = {
+        id:id,
+        name:"TJ"
+    };
+    next();
+});
+
+router.route('/users/:user_id')
+    .all(function(req, res, next) {
+        // runs for all HTTP verbs first
+        // think of it as route specific middleware!
+        next();
+    })
+    .get(function(req, res, next) {
+        res.json(req.user);
+    })
+    .put(function(req, res, next) {
+        // just an example of maybe updating the user
+        req.user.name = req.params.name;
+        // save user ... etc
+        res.json(req.user);
+    })
+    .post(function(req, res, next) {
+        next(new Error('not implemented'));
+    })
+    .delete(function(req, res, next) {
+        next(new Error('not implemented'));
+    })
+```
+这种方法重复使用单个`/usrs/:user_id`路径来添加了各种的HTTP方法。
+
+####router.use([path], [function, ...] function)
+给可选的`path`参数指定的路径挂载给定的中间件方法，未指定`path`参数，默认值为`/`。
+这个方法类似于`app.use()`。一个简单的例子和用例在下面描述。查阅[app.use()][56]获得更多的信息。
+中间件就像一个水暖管道，请求在你定义的第一个中间件处开始，顺着中间件堆栈一路往下，如果路径匹配则处理这个请求。
+```js
+var express = require('express');
+var app = express();
+var router = express.Router();
+
+
+// simple logger for this router`s requests
+// all requests to this router will first hit this middleware
+
+router.use(function(req, res, next) {
+    console.log('%s %s %s', req.method, req.url, req.path);
+    next();
+})
+
+// this will only be invoked if the path starts with /bar form the mount ponit
+router.use('/bar', function(req, res, next) {
+    // ... maybe some additional /bar logging ...
+    next();
+})
+
+// always be invoked
+router.use(function(req, res, next) {
+    res.send('hello world')；
+})
+
+app.use('/foo', router);
+
+app.listen(3000);
+
+```
+对于中间件`function`，挂载的路径是被剥离的和不可见的。关于这个特性主要的影响是已经挂载的中间件可能对代码不做改动，尽管其前缀已经改变。
+你使用`router.use()`定义中间件的顺序很重要。中间们是按序被调用的，所以顺序决定了中间件的优先级。例如，通常日志是你将使用的第一个中间件，以便每一个请求都被记录。
+```js
+var logger = require('morgan');
+
+router.use(logger());
+router.use(express.static(__dirname + '/public'));
+router.use(function(req, res) {
+    res.send('Hello');
+});
+```
+现在为了支持你不希望记录静态文件请求，但为了继续记录那些定义在`logger()`之后的路由和中间件。你可以简单的将`static()`移动到前面来解决：
+```js
+router.use(express.static(__dirname + '/public'));
+router.use(logger());
+router.use(function(req, res){
+  res.send('Hello');
+});
+```
+另外一个确凿的例子是从不同的路径托管静态文件，你可以将`./public`放到前面来获得更高的优先级:
+```js
+app.use(express.static(__dirname + '/public'));
+app.use(express.static(__dirname + '/files'));
+app.use(express.static(__dirname + '/uploads'));
+```
+`router.use()`方法也支持命名参数，以便你的挂载点对于其他的路由而言，可以使用命令参数来进行预加载，这样做是很有益的。
+
 
 
 
@@ -1700,3 +1911,4 @@ router.all('/api/*', requireAuthentication);
   [53]: http://en.wikipedia.org/wiki/List_of_HTTP_status_codes
   [54]: http://nodejs.org/api/http.html#http_response_statuscode
   [55]: https://github.com/broofa/node-mime?_ga=1.67301009.1201680737.1446005628#mimelookuppath
+  [56]: http://expressjs.com/en/4x/api.html#app.use
