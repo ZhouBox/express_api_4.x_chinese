@@ -1543,7 +1543,7 @@ app.get('/user/:uid/photos/:file', function(req, res) {
 ```
 如果一个不支持的状态被指定，这个HTTP status依然被设置为`statusCode`并且用这个code的字符串作为Body。
 ```js
-res.sendStatus(2000); // equivalent to res.status(5000).send('2000');
+res.sendStatus(2000); // equivalent to res.status(2000).send('2000');
 ```
 [More about HTTP Status Codes][53]
 
