@@ -1244,7 +1244,7 @@ res.cookie('remenberme', '1', {'expires':new Date(Date.now() + 90000), 'httpOnly
 ```
 `maxAge`是一个方便设置过期时间的方便的选项，其以当前时间开始的毫秒数来计算。下面的示例和上面的第二条功效一样。
 ```js
-res.cookie('rememberme', '1', {'masAge':90000}, "httpOnly":true);
+res.cookie('rememberme', '1', {'maxAge':90000}, "httpOnly":true);
 ```
 你可以设置传递一个对象作为`value`的参数。然后其将被序列化为Json字符串，被`bodyParser()`中间件解析。
 ```js
@@ -1258,7 +1258,7 @@ res.cookie('name', 'tobi', {'signed':true});
 
 
 ####res.clearCookie(name [,options])
-根据指定的`name`清楚对应的cookie。更多关于`options`对象可以查阅`res.cookie()`。
+根据指定的`name`清除对应的cookie。更多关于`options`对象可以查阅`res.cookie()`。
 ```js
 res.cookie('name', 'tobi', {'path':'/admin'});
 res.clearCookie('name', {'path':'admin'});
